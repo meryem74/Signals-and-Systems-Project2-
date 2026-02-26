@@ -1,0 +1,124 @@
+import numpy as np
+from scipy.io import wavfile
+from IPython.display import Audio
+
+# 1. AYARLAR VE FREKANS TABLOSU
+fs = 44100       
+duration = 0.04  # 40 ms
+t = np.linspace(0, duration, int(fs * duration), endpoint=False)
+
+low_freqs = [697, 770, 852, 941, 1050, 1150]
+high_freqs = [1336, 1477, 1633, 1800, 2000]
+
+freq_map = {
+    'A': (697, 1336), 'B': (697, 1477), 'C': (697, 1633), 'Ç': (697, 1800), 'D': (697, 2000),
+    'E': (770, 1336), 'F': (770, 1477), 'G': (770, 1633), 'Ğ': (770, 1800), 'H': (770, 2000),
+    'I': (852, 1336), 'İ': (852, 1477), 'J': (852, 1633), 'K': (852, 1800), 'L': (852, 2000),
+    'M': (941, 1336), 'N': (941, 1477), 'O': (941, 1633), 'Ö': (941, 1800), 'P': (941, 2000),
+    'R': (1050, 1336), 'S': (1050, 1477), 'Ş': (1050, 1633), 'T': (1050, 1800), 'U': (1050, 2000),
+    'Ü': (1150, 1336), 'V': (1150, 1477), 'Y': (1150, 1633), 'Z': (1150, 1800), ' ': (1150, 2000)
+}
+reverse_freq_map = {v: k for k, v in freq_map.items()}
+
+# --- ADIM 1: SENTEZLEME (ENCODING) ---
+def encode_message(text):
+    full_signal = []
+    for char in text.upper():
+        if char in freq_map:
+            f1, f2 = freq_map[char]
+            # Sinyal Sentezleme Modeli
+            signal = np.sin(2 * np.pi * f1 * t) + np.sin(2 * np.pi * f2 * t)
+            full_signal.append(signal)
+    
+    output = np.concatenate(full_signal)
+    output = output / np.max(np.abs(output)) # Normalizasyon
+    return output
+
+# --- ADIM 2: ÇÖZÜMLEME (DECODING) ---
+def decode_signal(signal):
+    window_size = len(t)
+    detected_text = ""
+    last_char = None
+    
+    for i in range(0, len(signal), window_size):
+        window = signal[i : i + window_size]
+        if len(window) < window_size: break
+        
+        # Pencereleme (Hamming Window)
+        window = window * np.hamming(len(window))
+        
+        # Frekans Tespiti (Goertzel Algoritması)
+        def get_energy(f):
+            N = len(window)
+            k = (N * f) / fs
+            omega = 2 * np.pi * k / N
+            coeff = 2 * np.cos(omega)
+            s_prev, s_prev2 = 0, 0
+            for x in window:
+                s = x + coeff * s_prev - s_prev2
+                s_prev2, s_prev = s_prev, s
+            return s_prev2**2 + s_prev**2 - coeff * s_prev * s_prev2
+
+        f_low = max(low_freqs, key=get_energy)
+        f_high = max(high_freqs, key=get_energy)
+        
+        # Dinamik Eşik Değer ve Debouncing
+        if get_energy(f_low) > 5.0: # Raporunla uyumlu eşik değer
+            current_char = reverse_freq_map.get((f_low, f_high), "")
+            if current_char != last_char:
+                detected_text += current_char
+                last_char = current_char
+        else:
+            last_char = None
+            
+    return detected_text
+
+# --- ÇALIŞTIRMA ---
+input_text = "MERHABA DUNYA"
+encoded_audio = encode_message(input_text)
+
+print(f"Orijinal Metin: {input_text}")
+display(Audio(encoded_audio, rate=fs))
+
+# Dosyaya Kaydet (16-bit PCM)
+wavfile.write("odev_output.wav", fs, (encoded_audio * 32767).astype(np.int16))
+
+# Çözümle
+decoded_text = decode_signal(encoded_audio)
+print(f"Çözümlenen Metin: {decoded_text}")
+
+
+
+import matplotlib.pyplot as plt
+
+# Örnek bir harf (A) için grafik çizimi
+f1, f2 = freq_map['A']
+sample_signal = (np.sin(2 * np.pi * f1 * t) + np.sin(2 * np.pi * f2 * t)) * np.hamming(len(t))
+
+plt.figure(figsize=(10, 4))
+plt.plot(t[:500], sample_signal[:500]) # İlk birkaç periyot
+plt.title(" 'A' Karakteri Zaman Düzlemi (Hamming Uygulanmış)")
+plt.xlabel("Zaman (s)")
+plt.ylabel("Genlik")
+plt.grid(True)
+plt.show()
+
+
+
+import matplotlib.pyplot as plt
+
+# Tüm metnin (encoded_audio) zaman düzlemi grafiği
+plt.figure(figsize=(15, 5))
+plt.plot(np.linspace(0, len(encoded_audio)/fs, len(encoded_audio)), encoded_audio, color='teal', linewidth=0.5)
+
+# Her harfin başladığı yere bir çizgi ve isim ekleyelim (Opsiyonel ama çok profesyonel durur)
+for i, char in enumerate(input_text):
+    plt.axvline(x=i*0.04, color='r', linestyle='--', alpha=0.3)
+    plt.text(i*0.04 + 0.01, 1.1, char, fontsize=12, color='red')
+
+plt.title(f"'{input_text}' Metninin Toplam Ses Sinyali (Zaman Düzlemi)")
+plt.xlabel("Zaman (saniye)")
+plt.ylabel("Genlik")
+plt.ylim(-1.5, 1.5)
+plt.grid(True, alpha=0.3)
+plt.show()
