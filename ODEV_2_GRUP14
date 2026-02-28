@@ -1,9 +1,10 @@
 import numpy as np
+import matplotlib.pyplot as plt
 from scipy.io import wavfile
 from IPython.display import Audio
 
 # 1. AYARLAR VE FREKANS TABLOSU
-fs = 44100       
+fs = 44100
 duration = 0.04  # 40 ms
 t = np.linspace(0, duration, int(fs * duration), endpoint=False)
 
@@ -20,33 +21,45 @@ freq_map = {
 }
 reverse_freq_map = {v: k for k, v in freq_map.items()}
 
+
 # --- ADIM 1: SENTEZLEME (ENCODING) ---
 def encode_message(text):
     full_signal = []
     for char in text.upper():
         if char in freq_map:
             f1, f2 = freq_map[char]
-            # Sinyal Sentezleme Modeli
             signal = np.sin(2 * np.pi * f1 * t) + np.sin(2 * np.pi * f2 * t)
             full_signal.append(signal)
-    
+
     output = np.concatenate(full_signal)
     output = output / np.max(np.abs(output)) # Normalizasyon
     return output
+
+# Arayüz simülasyonu: Kullanıcıdan metin alma
+input_text = input("Lütfen şifrelenecek metni giriniz: ").upper()
+encoded_audio = encode_message(input_text)
+
+print(f"Orijinal Metin: {input_text}")
+display(Audio(encoded_audio, rate=fs))
+
+# Dosyaya Kaydet (16-bit PCM)
+wavfile.write("odev_output.wav", fs, (encoded_audio * 32767).astype(np.int16))
+
+
 
 # --- ADIM 2: ÇÖZÜMLEME (DECODING) ---
 def decode_signal(signal):
     window_size = len(t)
     detected_text = ""
     last_char = None
-    
+
     for i in range(0, len(signal), window_size):
         window = signal[i : i + window_size]
         if len(window) < window_size: break
-        
+
         # Pencereleme (Hamming Window)
         window = window * np.hamming(len(window))
-        
+
         # Frekans Tespiti (Goertzel Algoritması)
         def get_energy(f):
             N = len(window)
@@ -61,7 +74,7 @@ def decode_signal(signal):
 
         f_low = max(low_freqs, key=get_energy)
         f_high = max(high_freqs, key=get_energy)
-        
+
         # Dinamik Eşik Değer ve Debouncing
         if get_energy(f_low) > 5.0: # Raporunla uyumlu eşik değer
             current_char = reverse_freq_map.get((f_low, f_high), "")
@@ -70,48 +83,31 @@ def decode_signal(signal):
                 last_char = current_char
         else:
             last_char = None
-            
+
     return detected_text
 
-# --- ÇALIŞTIRMA ---
-input_text = "MERHABA DUNYA"
-encoded_audio = encode_message(input_text)
-
-print(f"Orijinal Metin: {input_text}")
-display(Audio(encoded_audio, rate=fs))
-
-# Dosyaya Kaydet (16-bit PCM)
-wavfile.write("odev_output.wav", fs, (encoded_audio * 32767).astype(np.int16))
-
-# Çözümle
+# Çözümle ve Yazdır
 decoded_text = decode_signal(encoded_audio)
 print(f"Çözümlenen Metin: {decoded_text}")
 
 
-
-import matplotlib.pyplot as plt
-
-# Örnek bir harf (A) için grafik çizimi
-f1, f2 = freq_map['A']
-sample_signal = (np.sin(2 * np.pi * f1 * t) + np.sin(2 * np.pi * f2 * t)) * np.hamming(len(t))
+# --- GRAFİK 1: Örnek İlk Harf Zaman Düzlemi ---
+first_char = input_text[0]
+f1_sample, f2_sample = freq_map[first_char]
+sample_signal = (np.sin(2 * np.pi * f1_sample * t) + np.sin(2 * np.pi * f2_sample * t)) * np.hamming(len(t))
 
 plt.figure(figsize=(10, 4))
-plt.plot(t[:500], sample_signal[:500]) # İlk birkaç periyot
-plt.title(" 'A' Karakteri Zaman Düzlemi (Hamming Uygulanmış)")
+plt.plot(t[:500], sample_signal[:500]) 
+plt.title(f" '{first_char}' Karakteri Zaman Düzlemi (Hamming Uygulanmış)")
 plt.xlabel("Zaman (s)")
 plt.ylabel("Genlik")
 plt.grid(True)
 plt.show()
 
-
-
-import matplotlib.pyplot as plt
-
-# Tüm metnin (encoded_audio) zaman düzlemi grafiği
+# --- GRAFİK 2: Toplam Sinyal Analizi ---
 plt.figure(figsize=(15, 5))
 plt.plot(np.linspace(0, len(encoded_audio)/fs, len(encoded_audio)), encoded_audio, color='teal', linewidth=0.5)
 
-# Her harfin başladığı yere bir çizgi ve isim ekleyelim (Opsiyonel ama çok profesyonel durur)
 for i, char in enumerate(input_text):
     plt.axvline(x=i*0.04, color='r', linestyle='--', alpha=0.3)
     plt.text(i*0.04 + 0.01, 1.1, char, fontsize=12, color='red')
@@ -122,3 +118,22 @@ plt.ylabel("Genlik")
 plt.ylim(-1.5, 1.5)
 plt.grid(True, alpha=0.3)
 plt.show()
+
+# --- GRAFİK 3: İlk Harf Spektrum Analizi (Peak Görseli) ---
+window_size_sp = len(t)
+freqs = np.fft.rfftfreq(window_size_sp, 1/fs)
+spectrum = np.abs(np.fft.rfft(sample_signal))
+
+plt.figure(figsize=(10, 5))
+plt.plot(freqs, spectrum, color='blue')
+plt.axvline(f1_sample, color='r', linestyle='--', label=f'Low Peak: {f1_sample}Hz')
+plt.axvline(f2_sample, color='g', linestyle='--', label=f'High Peak: {f2_sample}Hz')
+plt.title(f"'{first_char}' Harfi Frekans Spektrumu (Decoding İspatı)")
+plt.xlabel("Frekans (Hz)")
+plt.ylabel("Enerji")
+plt.xlim(500, 2500)
+plt.legend()
+plt.grid(True)
+plt.show()
+
+
