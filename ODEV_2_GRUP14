@@ -1,18 +1,24 @@
+# Kodumuzu COLAB üzerinden oluşturduk, çalıştırdığımızda çıkan url üzerinden arayüzümüze ulaşmaktayız.
+
+
+!pip install gradio
+
+
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.io import wavfile
-from scipy import signal as sig_proc
 import gradio as gr
 import tempfile
-import os
-from datetime import datetime
 
-# --- SİNYAL AYARLARI ---
-FS = 44100
-DURATION = 0.08
-T = np.linspace(0, DURATION, int(FS * DURATION), endpoint=False)
+# 1. AYARLAR VE FREKANS TABLOSU
+fs = 44100
+duration = 0.04  
+t = np.linspace(0, duration, int(fs * duration), endpoint=False)
 
-FREQ_MAP = {
+low_freqs = [697, 770, 852, 941, 1050, 1150]
+high_freqs = [1336, 1477, 1633, 1800, 2000]
+
+freq_map = {
     'A': (697, 1336), 'B': (697, 1477), 'C': (697, 1633), 'Ç': (697, 1800), 'D': (697, 2000),
     'E': (770, 1336), 'F': (770, 1477), 'G': (770, 1633), 'Ğ': (770, 1800), 'H': (770, 2000),
     'I': (852, 1336), 'İ': (852, 1477), 'J': (852, 1633), 'K': (852, 1800), 'L': (852, 2000),
@@ -20,718 +26,99 @@ FREQ_MAP = {
     'R': (1050, 1336), 'S': (1050, 1477), 'Ş': (1050, 1633), 'T': (1050, 1800), 'U': (1050, 2000),
     'Ü': (1150, 1336), 'V': (1150, 1477), 'Y': (1150, 1633), 'Z': (1150, 1800), ' ': (1150, 2000)
 }
+reverse_freq_map = {v: k for k, v in freq_map.items()}
 
-# --- GELİŞMİŞ CSS TASARIMI ---
-custom_css = """
-@import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@400;700;900&display=swap');
-
-:root {
-    --neon-blue: #00f2ff;
-    --neon-pink: #ff0077;
-    --neon-purple: #b300ff;
-    --dark-bg: #0a0a0f;
-    --darker-bg: #050508;
-    --grid-color: rgba(0, 242, 255, 0.1);
-}
-
-* {
-    margin: 0;
-    padding: 0;
-    box-sizing: border-box;
-}
-
-.gradio-container {
-    background: var(--dark-bg) !important;
-    font-family: 'Share Tech Mono', monospace !important;
-    position: relative;
-    overflow-x: hidden;
-    max-width: 100% !important;
-}
-
-/* Cyberpunk grid arkaplan */
-.gradio-container::before {
-    content: "";
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background-image: 
-        linear-gradient(var(--grid-color) 1px, transparent 1px),
-        linear-gradient(90deg, var(--grid-color) 1px, transparent 1px);
-    background-size: 50px 50px;
-    pointer-events: none;
-    z-index: 0;
-}
-
-/* Cyber Header */
-.cyber-header {
-    background: linear-gradient(180deg, var(--darker-bg) 0%, rgba(10,10,15,0.9) 100%);
-    border-bottom: 2px solid var(--neon-blue);
-    padding: 20px 30px;
-    position: relative;
-    overflow: hidden;
-    margin-bottom: 20px;
-    box-shadow: 0 0 30px rgba(0, 242, 255, 0.2);
-    z-index: 10;
-}
-
-.scan-line {
-    position: absolute;
-    top: 0;
-    left: -100%;
-    width: 100%;
-    height: 2px;
-    background: linear-gradient(90deg, transparent, var(--neon-blue), transparent);
-    animation: scan 4s linear infinite;
-}
-
-@keyframes scan {
-    0% { left: -100%; }
-    100% { left: 100%; }
-}
-
-/* Glitch efekti */
-.glitch-container {
-    text-align: center;
-    margin-bottom: 15px;
-}
-
-.glitch {
-    font-family: 'Orbitron', sans-serif;
-    font-size: 2.5em;
-    font-weight: 900;
-    text-transform: uppercase;
-    color: var(--neon-blue);
-    letter-spacing: 5px;
-    position: relative;
-    text-shadow: 
-        0.05em 0 0 var(--neon-pink),
-        -0.05em -0.025em 0 var(--neon-purple);
-    animation: glitch 725ms infinite;
-}
-
-.glitch::before,
-.glitch::after {
-    content: attr(data-text);
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-}
-
-.glitch::before {
-    animation: glitch-1 0.8s infinite linear alternate-reverse;
-    color: var(--neon-pink);
-    z-index: -1;
-}
-
-.glitch::after {
-    animation: glitch-2 0.8s infinite linear alternate-reverse;
-    color: var(--neon-purple);
-    z-index: -2;
-}
-
-@keyframes glitch-1 {
-    0% { clip-path: inset(20% 0 30% 0); }
-    20% { clip-path: inset(65% 0 1% 0); }
-    40% { clip-path: inset(43% 0 1% 0); }
-    60% { clip-path: inset(25% 0 85% 0); }
-    80% { clip-path: inset(95% 0 5% 0); }
-    100% { clip-path: inset(15% 0 70% 0); }
-}
-
-@keyframes glitch-2 {
-    0% { clip-path: inset(60% 0 20% 0); }
-    20% { clip-path: inset(10% 0 80% 0); }
-    40% { clip-path: inset(80% 0 5% 0); }
-    60% { clip-path: inset(30% 0 60% 0); }
-    80% { clip-path: inset(45% 0 40% 0); }
-    100% { clip-path: inset(70% 0 10% 0); }
-}
-
-/* Header Metrics */
-.header-metrics {
-    display: flex;
-    justify-content: center;
-    gap: 40px;
-    margin: 20px 0;
-}
-
-.metric {
-    text-align: center;
-}
-
-.metric-label {
-    display: block;
-    color: var(--neon-pink);
-    font-size: 0.8em;
-    letter-spacing: 2px;
-    margin-bottom: 5px;
-}
-
-.metric-value {
-    color: var(--neon-blue);
-    font-size: 1.2em;
-    font-weight: bold;
-    text-shadow: 0 0 10px var(--neon-blue);
-}
-
-.blinking {
-    animation: blink 1s infinite;
-}
-
-@keyframes blink {
-    0%, 50% { opacity: 1; }
-    51%, 100% { opacity: 0.3; }
-}
-
-/* Terminal line */
-.terminal-line {
-    font-size: 1.1em;
-    color: var(--neon-blue);
-    margin-top: 15px;
-    padding: 10px;
-    background: rgba(0,0,0,0.5);
-    border-left: 3px solid var(--neon-pink);
-}
-
-.prompt {
-    color: var(--neon-pink);
-    margin-right: 10px;
-}
-
-.cursor {
-    animation: cursor-blink 1s infinite;
-}
-
-@keyframes cursor-blink {
-    0%, 50% { opacity: 1; }
-    51%, 100% { opacity: 0; }
-}
-
-/* Cyber Card */
-.cyber-card {
-    background: rgba(10, 10, 15, 0.8) !important;
-    backdrop-filter: blur(10px);
-    border: 1px solid var(--neon-blue) !important;
-    border-radius: 0 !important;
-    padding: 20px !important;
-    position: relative;
-    box-shadow: 
-        0 0 30px rgba(0, 242, 255, 0.1),
-        inset 0 0 20px rgba(0, 242, 255, 0.05);
-    z-index: 10;
-    margin: 10px;
-}
-
-.cyber-card::before {
-    content: "";
-    position: absolute;
-    top: -2px;
-    left: -2px;
-    right: -2px;
-    bottom: -2px;
-    border: 1px solid var(--neon-pink);
-    opacity: 0.3;
-    pointer-events: none;
-}
-
-/* Input alanları */
-input, textarea {
-    background: rgba(0, 0, 0, 0.7) !important;
-    border: 1px solid var(--neon-blue) !important;
-    color: var(--neon-blue) !important;
-    font-family: 'Share Tech Mono', monospace !important;
-    border-radius: 0 !important;
-    transition: all 0.3s ease !important;
-}
-
-input:focus, textarea:focus {
-    box-shadow: 0 0 20px var(--neon-blue) !important;
-    border-color: var(--neon-pink) !important;
-}
-
-/* Butonlar */
-.gr-button {
-    background: transparent !important;
-    border: 2px solid var(--neon-blue) !important;
-    color: var(--neon-blue) !important;
-    font-family: 'Orbitron', sans-serif !important;
-    font-weight: bold !important;
-    letter-spacing: 2px !important;
-    text-transform: uppercase !important;
-    border-radius: 0 !important;
-    position: relative;
-    overflow: hidden;
-    transition: all 0.3s ease !important;
-}
-
-.gr-button:hover {
-    background: var(--neon-blue) !important;
-    color: var(--dark-bg) !important;
-    box-shadow: 0 0 30px var(--neon-blue) !important;
-    border-color: var(--neon-blue) !important;
-}
-
-.gr-button::before {
-    content: ">";
-    position: absolute;
-    left: -20px;
-    transition: left 0.3s ease;
-}
-
-.gr-button:hover::before {
-    left: 10px;
-}
-
-/* Status tag */
-.stat-tag {
-    border-left: 4px solid var(--neon-pink) !important;
-    background: rgba(255, 0, 119, 0.05) !important;
-    padding: 15px !important;
-    margin-top: 20px !important;
-}
-
-/* Tabs */
-.gr-tabs {
-    border: none !important;
-}
-
-.gr-tabs-nav {
-    background: transparent !important;
-    border-bottom: 1px solid var(--neon-blue) !important;
-}
-
-.gr-tabs-nav button {
-    background: transparent !important;
-    color: var(--neon-blue) !important;
-    font-family: 'Share Tech Mono', monospace !important;
-    border: none !important;
-    border-radius: 0 !important;
-    transition: all 0.3s ease !important;
-}
-
-.gr-tabs-nav button:hover {
-    background: rgba(0, 242, 255, 0.1) !important;
-}
-
-.gr-tabs-nav button.selected {
-    border-bottom: 3px solid var(--neon-pink) !important;
-    color: var(--neon-pink) !important;
-}
-
-/* Footer */
-.cyber-footer {
-    margin-top: 30px;
-    padding: 15px 30px;
-    background: linear-gradient(0deg, var(--darker-bg) 0%, rgba(10,10,15,0.9) 100%);
-    border-top: 2px solid var(--neon-blue);
-    display: flex;
-    justify-content: space-between;
-    font-size: 0.9em;
-    position: relative;
-    z-index: 10;
-}
-
-.footer-left, .footer-center, .footer-right {
-    color: var(--neon-blue);
-}
-
-.status-indicator {
-    color: var(--neon-pink);
-    animation: pulse 2s infinite;
-}
-
-@keyframes pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.5; }
-}
-
-/* Plotlar için özel stil */
-.plot-container {
-    border: 1px solid rgba(0, 242, 255, 0.3) !important;
-    border-radius: 0 !important;
-    overflow: hidden;
-}
-
-/* Responsive tasarım */
-@media (max-width: 768px) {
-    .glitch {
-        font-size: 1.5em;
-    }
-    
-    .header-metrics {
-        flex-direction: column;
-        gap: 10px;
-    }
-    
-    .cyber-footer {
-        flex-direction: column;
-        text-align: center;
-        gap: 10px;
-    }
-}
-"""
-
-# --- HTML BİLEŞENLERİ ---
-def create_cyber_header():
-    now = datetime.now()
-    return f"""
-    <div class="cyber-header">
-        <div class="scan-line"></div>
-        <div class="glitch-container">
-            <h1 class="glitch" data-text="SIGNAL INTELLIGENCE LAB">SIGNAL INTELLIGENCE LAB</h1>
-        </div>
-        <div class="header-metrics">
-            <div class="metric">
-                <span class="metric-label">STATUS</span>
-                <span class="metric-value blinking">ACTIVE</span>
-            </div>
-            <div class="metric">
-                <span class="metric-label">ENCRYPTION</span>
-                <span class="metric-value">AES-256</span>
-            </div>
-            <div class="metric">
-                <span class="metric-label">VERSION</span>
-                <span class="metric-value">7.0 CORE</span>
-            </div>
-        </div>
-        <div class="terminal-line">
-            <span class="prompt">$></span>
-            <span class="command" id="typing-effect"></span>
-            <span class="cursor">_</span>
-        </div>
-    </div>
-    """
-
-def create_cyber_footer():
-    now = datetime.now()
-    return f"""
-    <div class="cyber-footer">
-        <div class="footer-left">
-            <span class="timestamp" id="live-timestamp">🕒 {now.strftime('%Y-%m-%d %H:%M:%S')} UTC</span>
-        </div>
-        <div class="footer-center">
-            <span class="status-indicator">🔴 LIVE CAPTURE</span>
-        </div>
-        <div class="footer-right">
-            <span class="system-info">SIGNAL PROCESSING v7.0</span>
-        </div>
-    </div>
-    """
-
-def create_time_domain_plot(signal_data, chars):
-    """Zaman düzlemindeki sinyal grafiği"""
-    fig, ax = plt.subplots(figsize=(12, 4), facecolor='#0a0a0f')
-    ax.set_facecolor('#0a0a0f')
-    
-    # Zaman ekseni oluştur
-    time = np.linspace(0, len(signal_data)/FS, len(signal_data))
-    
-    # İlk 3000 örnek veya tüm sinyal (hangisi daha küçükse)
-    n_samples = min(3000, len(signal_data))
-    
-    # Grid çizgileri
-    ax.grid(True, alpha=0.15, linestyle='-', color='#00f2ff', linewidth=0.5)
-    
-    # Zaman düzleminde sinyal çizimi
-    ax.plot(time[:n_samples], signal_data[:n_samples], 
-            color='#00f2ff', linewidth=1.5, alpha=0.8)
-    ax.fill_between(time[:n_samples], signal_data[:n_samples], 0, 
-                    alpha=0.2, color='#00f2ff')
-    
-    # Eksen etiketleri
-    ax.set_xlabel('ZAMAN (s)', color='#00f2ff', fontsize=10)
-    ax.set_ylabel('GENLİK', color='#00f2ff', fontsize=10)
-    ax.tick_params(colors='#00f2ff', which='both')
-    
-    # Kenarlık efekti
-    for spine in ax.spines.values():
-        spine.set_color('#00f2ff')
-        spine.set_alpha(0.3)
-        spine.set_linewidth(1)
-    
-    # Karakter bilgisi
-    if chars:
-        char_text = ''.join(chars[:10]) + ('...' if len(chars) > 10 else '')
-        ax.text(0.02, 0.95, f"SİNYAL: {char_text}", transform=ax.transAxes,
-                color='#ff0077', fontsize=10, fontweight='bold',
-                bbox=dict(boxstyle="round,pad=0.3", facecolor='#0a0a0f', 
-                         edgecolor='#ff0077', alpha=0.8))
-    
-    # Zaman bilgisi
-    duration = len(signal_data)/FS
-    ax.text(0.98, 0.95, f"Süre: {duration:.2f}s", transform=ax.transAxes,
-            color='#00f2ff', fontsize=9, fontweight='bold',
-            horizontalalignment='right',
-            bbox=dict(boxstyle="round,pad=0.3", facecolor='#0a0a0f', 
-                     edgecolor='#00f2ff', alpha=0.8))
-    
-    plt.tight_layout()
-    return fig
-
-def create_spectrum_plot(signal_data, chars):
-    """Frekans spektrumu grafiği"""
-    fig, ax = plt.subplots(figsize=(12, 4), facecolor='#0a0a0f')
-    ax.set_facecolor('#0a0a0f')
-    
-    # Frekans analizi
-    freqs_fft = np.fft.rfftfreq(len(signal_data), 1/FS)
-    spectrum = np.abs(np.fft.rfft(signal_data * np.hamming(len(signal_data))))
-    
-    # Spektrum çizimi (0-5000 Hz arası)
-    mask = freqs_fft <= 5000
-    ax.fill_between(freqs_fft[mask], spectrum[mask], 0, alpha=0.3, color='#00f2ff')
-    ax.plot(freqs_fft[mask], spectrum[mask], color='#00f2ff', linewidth=1, alpha=0.8)
-    
-    # DTMF frekans çizgileri
-    dtmf_freqs = [697, 770, 852, 941, 1209, 1336, 1477, 1633]
-    for freq in dtmf_freqs:
-        ax.axvline(x=freq, color='#ff0077', alpha=0.3, linestyle='--', linewidth=0.5)
-    
-    ax.set_xlim(0, 2500)
-    ax.set_xlabel('FREKANS (Hz)', color='#00f2ff', fontsize=10)
-    ax.set_ylabel('GENLİK', color='#00f2ff', fontsize=10)
-    ax.tick_params(colors='#00f2ff', which='both')
-    
-    # Grid
-    ax.grid(True, alpha=0.1, linestyle='-', color='#00f2ff', linewidth=0.3)
-    
-    # Kenarlık
-    for spine in ax.spines.values():
-        spine.set_color('#00f2ff')
-        spine.set_alpha(0.3)
-    
-    plt.tight_layout()
-    return fig
-
-def create_spectrogram_plot(audio, chars):
-    """Spektrogram grafiği"""
-    fig, ax = plt.subplots(figsize=(12, 4), facecolor='#0a0a0f')
-    ax.set_facecolor('#0a0a0f')
-    
-    frequencies, times, spectrogram = sig_proc.spectrogram(audio, FS, nperseg=256)
-    
-    # Spektrogram çizimi
-    mesh = ax.pcolormesh(times, frequencies, 10 * np.log10(spectrogram + 1e-10),
-                         shading='gouraud', cmap='plasma')
-    
-    ax.set_ylim(0, 5000)
-    ax.set_xlabel('ZAMAN (s)', color='#00f2ff', fontsize=10)
-    ax.set_ylabel('FREKANS (Hz)', color='#00f2ff', fontsize=10)
-    ax.tick_params(colors='#00f2ff', which='both')
-    
-    # Grid
-    ax.grid(True, alpha=0.1, linestyle='-', color='#ffffff', linewidth=0.3)
-    
-    # Kenarlık
-    for spine in ax.spines.values():
-        spine.set_color('#00f2ff')
-        spine.set_alpha(0.3)
-    
-    # Colorbar
-    cbar = plt.colorbar(mesh, ax=ax, pad=0.01)
-    cbar.ax.yaxis.set_tick_params(color='#00f2ff')
-    plt.setp(plt.getp(cbar.ax.axes, 'yticklabels'), color='#00f2ff')
-    cbar.set_label('GÜÇ (dB)', color='#00f2ff')
-    
-    plt.tight_layout()
-    return fig
-
-def process_signal(text):
-    """Ana sinyal işleme fonksiyonu"""
-    if not text or text.strip() == "":
-        return None, "⚠️ HATA: VERİ YOK", None, None, None
-    
-    text = text.upper()
+# --- FONKSİYONLAR ---
+def encode_message(text):
     full_signal = []
-    valid_chars = []
+    for char in text.upper():
+        if char in freq_map:
+            f1, f2 = freq_map[char]
+            signal = np.sin(2 * np.pi * f1 * t) + np.sin(2 * np.pi * f2 * t)
+            full_signal.append(signal)
+    if not full_signal: return np.zeros_like(t)
+    return np.concatenate(full_signal) / np.max(np.abs(np.concatenate(full_signal)))
+
+def decode_signal(signal):
+    window_size = len(t)
+    detected_text, last_char = "", None
+    def get_energy(window, f):
+        N = len(window); k = (N * f) / fs; omega = 2 * np.pi * k / N
+        coeff = 2 * np.cos(omega); s_prev, s_prev2 = 0, 0
+        for x in window:
+            s = x + coeff * s_prev - s_prev2
+            s_prev2, s_prev = s_prev, s
+        return s_prev2**2 + s_prev**2 - coeff * s_prev * s_prev2
+
+    for i in range(0, len(signal), window_size):
+        window = signal[i : i + window_size]
+        if len(window) < window_size: break
+        window = window * np.hamming(len(window))
+        f_low = max(low_freqs, key=lambda f: get_energy(window, f))
+        f_high = max(high_freqs, key=lambda f: get_energy(window, f))
+        if get_energy(window, f_low) > 5.0:
+            current_char = reverse_freq_map.get((f_low, f_high), "")
+            if current_char != last_char:
+                detected_text += current_char
+                last_char = current_char
+        else: last_char = None
+    return detected_text
+
+# --- ARAYÜZ MOTORU ---
+def process_dynamic(input_text):
+    if not input_text: return None, "Giriş yok", None, None, None
     
-    for char in text:
-        if char in FREQ_MAP:
-            f1, f2 = FREQ_MAP[char]
-            s = np.sin(2 * np.pi * f1 * T) + np.sin(2 * np.pi * f2 * T)
-            full_signal.append(s)
-            valid_chars.append(char)
+    # Debouncing Analizi
+    raw_audio_for_decode = encode_message(input_text)
+    clean_text = decode_signal(raw_audio_for_decode)
     
-    if not full_signal:
-        return None, "⚠️ HATA: GEÇERSİZ KARAKTERLER", None, None, None
-
-    final_audio = np.concatenate(full_signal)
+    # Çözülen (temiz) metne göre sinyal ve grafik oluşturma
+    final_audio = encode_message(clean_text)
+    temp_wav = tempfile.NamedTemporaryFile(delete=False, suffix=".wav")
+    wavfile.write(temp_wav.name, fs, (final_audio * 32767).astype(np.int16))
     
-    # Normalize - sıfıra bölme kontrolü
-    max_val = np.max(np.abs(final_audio))
-    if max_val > 0:
-        final_audio = final_audio / max_val
-    else:
-        final_audio = np.zeros_like(final_audio)
-
-    # Geçici dosya oluştur
-    temp_dir = tempfile.gettempdir()
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    temp_path = os.path.join(temp_dir, f"signal_{timestamp}.wav")
+    # Grafik 1 & 3: İlk Harf Odaklı
+    first_char = clean_text[0] if clean_text else " "
+    f1_s, f2_s = freq_map.get(first_char, (0, 0))
+    s_signal = (np.sin(2 * np.pi * f1_s * t) + np.sin(2 * np.pi * f2_s * t)) * np.hamming(len(t))
     
-    # WAV dosyasına yaz
-    wavfile.write(temp_path, FS, (final_audio * 32767).astype(np.int16))
+    # Fig 1: Zaman Düzlemi
+    fig1, ax1 = plt.subplots(figsize=(10, 3))
+    ax1.plot(t[:500], s_signal[:500]); ax1.set_title(f"'{first_char}' Metnin ilk Karakteri İçin Zaman Düzlemi"); ax1.grid(True)
 
-    # Görselleştirme (Zaman düzlemi, Spektrum ve Spektrogram)
-    plt.style.use('dark_background')
-    fig_time = create_time_domain_plot(final_audio, valid_chars)
-    fig_fft = create_spectrum_plot(final_audio, valid_chars)
-    fig_spec = create_spectrogram_plot(final_audio, valid_chars)
+    # Fig 2: Toplam Sinyal (Çözülen Metne Göre)
+    fig2, ax2 = plt.subplots(figsize=(15, 4))
+    ax2.plot(np.linspace(0, len(final_audio)/fs, len(final_audio)), final_audio, color='teal', linewidth=0.5)
+    for i, char in enumerate(clean_text):
+        ax2.axvline(x=i*0.04, color='r', linestyle='--', alpha=0.3)
+        ax2.text(i*0.04 + 0.005, 0.9, char, color='red', fontsize=12, fontweight='bold')
+    ax2.set_title(f"Çözümlenen '{clean_text}' Sinyal Akışı"); ax2.set_ylim(-1.5, 1.5); ax2.grid(True, alpha=0.3)
 
-    status_msg = f"✅ BAŞARILI: {len(valid_chars)} karakter işlendi | {''.join(valid_chars)}"
-    return temp_path, status_msg, fig_time, fig_fft, fig_spec
+    # Fig 3: Spektrum (İlk Harfe Göre)
+    freqs = np.fft.rfftfreq(len(t), 1/fs)
+    spectrum = np.abs(np.fft.rfft(s_signal))
+    fig3, ax3 = plt.subplots(figsize=(10, 4))
+    ax3.plot(freqs, spectrum, color='blue')
+    ax3.axvline(f1_s, color='r', linestyle='--', label=f'Low: {f1_s}Hz')
+    ax3.axvline(f2_s, color='g', linestyle='--', label=f'High: {f2_s}Hz')
+    ax3.set_xlim(500, 2500); ax3.set_title(f"'{first_char}' Metnin İlk Harfi İçin Spektrum Analizi"); ax3.legend(); ax3.grid(True)
 
-# --- JAVASCRIPT FONKSİYONLARI ---
-custom_js = """
-function updateTimestamp() {
-    const now = new Date();
-    const timestamp = now.toISOString().replace('T', ' ').substr(0, 19);
-    const element = document.getElementById('live-timestamp');
-    if (element) {
-        element.innerHTML = '🕒 ' + timestamp + ' UTC';
-    }
-}
+    return temp_wav.name, clean_text, fig1, fig2, fig3
 
-function typeWriter() {
-    const texts = [
-        'SIGNAL PROCESSING ACTIVE',
-        'MONITORING FREQUENCIES',
-        'DTMF ENCRYPTION ONLINE',
-        'SPECTRAL ANALYSIS READY',
-        'TIME DOMAIN ANALYSIS'
-    ];
-    let index = 0;
-    let charIndex = 0;
-    let currentText = '';
-    let isDeleting = false;
-
-    function type() {
-        const element = document.getElementById('typing-effect');
-        if (!element) return;
-        
-        if (isDeleting) {
-            currentText = texts[index].substring(0, charIndex - 1);
-            charIndex--;
-        } else {
-            currentText = texts[index].substring(0, charIndex + 1);
-            charIndex++;
-        }
-
-        element.innerHTML = currentText;
-
-        if (!isDeleting && charIndex === texts[index].length) {
-            isDeleting = true;
-            setTimeout(type, 2000);
-        } else if (isDeleting && charIndex === 0) {
-            isDeleting = false;
-            index = (index + 1) % texts.length;
-            setTimeout(type, 500);
-        } else {
-            setTimeout(type, isDeleting ? 50 : 100);
-        }
-    }
-
-    type();
-}
-
-// Sayfa yüklendiğinde çalışacak fonksiyonlar
-document.addEventListener('DOMContentLoaded', function() {
-    updateTimestamp();
-    setInterval(updateTimestamp, 1000);
-    typeWriter();
-    
-    // Input validation
-    setTimeout(function() {
-        const textInput = document.querySelector('textarea, input[type="text"]');
-        if (textInput) {
-            textInput.addEventListener('input', function(e) {
-                const value = e.target.value.toUpperCase();
-                const valid = 'ABCDEFGHIJKLMNOPQRSTUVWXYZÇĞİÖŞÜ ';
-                let filtered = '';
-                
-                for (let char of value) {
-                    if (valid.includes(char)) {
-                        filtered += char;
-                    }
-                }
-                
-                e.target.value = filtered;
-            });
-        }
-    }, 1000);
-});
-"""
-
-# --- ARAYÜZ YAPISI ---
-with gr.Blocks(css=custom_css, theme=gr.themes.Default(), title="Signal Intelligence Lab") as demo:
-    # Header
-    gr.HTML(create_cyber_header())
+# --- ARAYÜZ TASARIMI ---
+with gr.Blocks() as demo:
+    gr.Markdown("# 📡 Dinamik DTMF Analiz Paneli")
+    input_box = gr.Textbox(label="Metin Girin (Örn: MERHABAAAA)", value="MERHABAAAA")
+    btn = gr.Button("Analiz Et", variant="primary")
     
     with gr.Row():
-        with gr.Column(scale=1, elem_classes="cyber-card"):
-            gr.Markdown("### 📡 INPUT STREAM")
-            input_text = gr.Textbox(
-                label="",
-                placeholder="> ENTER MESSAGE TO ENCRYPT...",
-                lines=3,
-                elem_id="input-stream"
-            )
-            analyze_btn = gr.Button("🔴 GENERATE SIGNAL", variant="primary", size="lg")
-            audio_out = gr.Audio(
-                label="SIGNAL OUTPUT",
-                type="filepath",
-                elem_classes="cyber-audio"
-            )
-            
-            # stat-tag için Column kullan
-            with gr.Column(elem_classes="stat-tag"):
-                gr.Markdown("### 🛠 SYSTEM METRICS")
-                text_out = gr.Textbox(
-                    label="STATUS",
-                    interactive=False,
-                    elem_id="status-output",
-                    lines=6
-                )
+        audio_out = gr.Audio(label="Temizlenmiş Ses Çıktısı")
+        text_out = gr.Textbox(label="Çözümlenen (Debouncing Uygulanmış) Metin")
         
-        with gr.Column(scale=2, elem_classes="cyber-card"):
-            gr.Markdown("### 📊 SIGNAL ANALYSIS")
-            with gr.Tabs():
-                with gr.TabItem("⏱️ ZAMAN DÜZLEMİ"):
-                    plot_time = gr.Plot(show_label=False, elem_classes="plot-container")
-                with gr.TabItem("⚡ SPEKTRUM"):
-                    plot_fft = gr.Plot(show_label=False, elem_classes="plot-container")
-                with gr.TabItem("🌡️ SPEKTROGRAM"):
-                    plot_spec = gr.Plot(show_label=False, elem_classes="plot-container")
-    
-    # Footer
-    gr.HTML(create_cyber_footer())
-    
-    # JavaScript
-    gr.HTML(f"<script>{custom_js}</script>")
-    
-    # Event handlers
-    analyze_btn.click(
-        process_signal, 
-        inputs=input_text, 
-        outputs=[audio_out, text_out, plot_time, plot_fft, plot_spec]
-    )
-    
-    # Enter tuşu ile gönderme
-    input_text.submit(
-        process_signal, 
-        inputs=input_text, 
-        outputs=[audio_out, text_out, plot_time, plot_fft, plot_spec]
-    )
+    p1 = gr.Plot(label="İlk Harf Zaman Grafiği")
+    p2 = gr.Plot(label="Çözülen Metne Göre Sinyal Akışı")
+    p3 = gr.Plot(label="İlk Harf Spektrum Analizi")
 
-# --- BAŞLATMA ---
-if __name__ == "__main__":
-    demo.launch(
-        server_name="0.0.0.0",
-        server_port=7860,
-        inbrowser=True,
-        share=False
-    )
+    btn.click(process_dynamic, inputs=input_box, outputs=[audio_out, text_out, p1, p2, p3])
+
+demo.launch(share=True)
